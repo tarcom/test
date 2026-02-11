@@ -1,0 +1,15 @@
+[
+    {
+        "domain": ".superbits.org",
+        "expirationDate": 1802050722.362647,
+        "hostOnly": false,
+        "httpOnly": true,
+        "name": "pass",
+        "path": "/",
+        "sameSite": null,
+        "secure": true,
+        "session": false,
+        "storeId": null,
+        "value": "85a741373e5cd4a4c1adc3d1c86ec0b4"
+    }
+]

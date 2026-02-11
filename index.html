@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Superbits P2P</title>
+    <style>
+      :root {
+        --bg: #0f1222;
+        --panel: #141a35;
+        --text: #e8ecff;
+        --muted: #b8c0ff;
+        --accent: #2b8cff;
+        --border: #2a355e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #1e2754, #0f1222);
+        color: var(--text);
+      }
+
+      header {
+        padding: 32px 20px 16px;
+        text-align: center;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 16px 20px 40px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        margin-bottom: 16px;
+      }
+
+      .debug {
+        font-size: 12px;
+        font-family: "Courier New", monospace;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 12px;
+        border-radius: 6px;
+        margin-bottom: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .status {
+        margin-bottom: 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .error {
+        color: #ffb4b4;
+      }
+
+      .success {
+        color: #b4ffb4;
+      }
+
+      .info {
+        color: var(--accent);
+      }
+
+      .content {
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      thead th {
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 13px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+
+      tbody td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      tbody tr:hover {
+        background: rgba(43, 140, 255, 0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Superbits Torrents</h1>
+      <p>Henter data fra RSS-feed</p>
+    </header>
+    <main>
+      <div class="panel">
+        <div class="status" id="status">Indlæser...</div>
+        <div class="debug" id="debug"></div>
+      </div>
+      <div class="panel">
+        <div id="content">
+          <table>
+            <thead>
+              <tr>
+                <th>Titel</th>
+                <th>Dato</th>
+                <th>Kategori</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const debugEl = document.getElementById("debug");
+      const rowsEl = document.getElementById("rows");
+
+      const log = (msg) => {
+        const time = new Date().toLocaleTimeString("da-DK");
+        debugEl.textContent += `[${time}] ${msg}\n`;
+        debugEl.scrollTop = debugEl.scrollHeight;
+      };
+
+      const formatDate = (value) => {
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString("da-DK");
+      };
+
+      const escapeHtml = (value) =>
+        value
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      const renderRow = ({ title, pubDate, category, link }) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td data-label="Titel">${escapeHtml(title)}</td>
+          <td data-label="Dato">${escapeHtml(formatDate(pubDate))}</td>
+          <td data-label="Kategori"><span class="tag">${escapeHtml(
+            category || "-"
+          )}</span></td>
+          <td data-label="Link"><a href="${link}" target="_blank" rel="noopener">Åbn</a></td>
+        `;
+        return tr;
+      };
+
+      const parseRss = (text) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "application/xml");
+        const items = Array.from(doc.querySelectorAll("item"));
+
+        return items.map((item) => ({
+          title: item.querySelector("title")?.textContent?.trim() || "(uden titel)",
+          pubDate: item.querySelector("pubDate")?.textContent?.trim() || "",
+          category: item.querySelector("category")?.textContent?.trim() || "",
+          link: item.querySelector("link")?.textContent?.trim() || "#",
+        }));
+      };
+
+      const loadFeed = async () => {
+        log("Start: Henter RSS-feed...");
+        statusEl.textContent = "Indlæser...";
+        rowsEl.innerHTML = "";
+
+        try {
+          log("Sender request til /rss");
+          const response = await fetch("/rss", { cache: "no-store" });
+
+          log(`Status: ${response.status}`);
+
+          if (!response.ok) {
+            log(`FEJL: HTTP ${response.status}`);
+            statusEl.innerHTML =
+              `<span class="error">HTTP ${response.status}</span>`;
+            return;
+          }
+
+          const text = await response.text();
+          log(`Svar modtaget: ${text.length} bytes`);
+
+          const items = parseRss(text);
+          log(`Fandt ${items.length} torrents`);
+
+          if (!items.length) {
+            statusEl.textContent = "Ingen torrents fundet.";
+            return;
+          }
+
+          items.forEach((item) => rowsEl.appendChild(renderRow(item)));
+          statusEl.innerHTML = `<span class="success">✓ Viser ${items.length} torrents</span>`;
+        } catch (error) {
+          log(`FEJL: ${error.message}`);
+          statusEl.innerHTML =
+            `<span class="error">FEJL: ${error.message}</span>`;
+        }
+      };
+
+      loadFeed();
+    </script>
+  </body>
+</html>
