@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Superbits P2P - Local</title>
+    <style>
+      :root {
+        --bg: #0f1222;
+        --panel: #141a35;
+        --text: #e8ecff;
+        --muted: #b8c0ff;
+        --accent: #2b8cff;
+        --border: #2a355e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #1e2754, #0f1222);
+        color: var(--text);
+      }
+
+      header {
+        padding: 32px 20px 16px;
+        text-align: center;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 16px 20px 40px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        margin-bottom: 16px;
+      }
+
+      .debug {
+        font-size: 12px;
+        font-family: "Courier New", monospace;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 12px;
+        border-radius: 6px;
+        max-height: 250px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .status {
+        margin-bottom: 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .error {
+        color: #ffb4b4;
+      }
+
+      .success {
+        color: #b4ffb4;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Superbits P2P (Local Test)</h1>
+      <p>Puppeteer med headless: false på Windows</p>
+    </header>
+    <main>
+      <div class="panel">
+        <div class="status" id="status">Indlæser...</div>
+        <div class="debug" id="debug"></div>
+      </div>
+    </main>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const debugEl = document.getElementById("debug");
+
+      const log = (msg) => {
+        const time = new Date().toLocaleTimeString("da-DK");
+        debugEl.textContent += `[${time}] ${msg}\n`;
+        debugEl.scrollTop = debugEl.scrollHeight;
+      };
+
+      const loadPage = async () => {
+        log("Start: Henter /p2p...");
+        statusEl.textContent = "Indlæser...";
+
+        try {
+          log("Sender request til serveren...");
+          const response = await fetch("/p2p", { cache: "no-store" });
+
+          log(`HTTP Status: ${response.status}`);
+
+          if (!response.ok) {
+            log(`FEJL: HTTP ${response.status}`);
+            statusEl.innerHTML =
+              `<span class="error">HTTP ${response.status}</span>`;
+            return;
+          }
+
+          const html = await response.text();
+          log(`Respons: ${html.length} bytes`);
+
+          // Tjek indholdet
+          const checks = {
+            torrent: html.includes("torrent"),
+            seeders: html.includes("Seeders") || html.includes("seeders"),
+            leechers: html.includes("Leechers") || html.includes("leechers"),
+            cloudflare: html.includes("Just a moment") || html.includes("Cloudflare"),
+            angular: html.includes("ng-") || html.includes("angular"),
+          };
+
+          log(`Checks: Torrent=${checks.torrent}, Seeders=${checks.seeders}, Cloudflare=${checks.cloudflare}`);
+
+          if (checks.cloudflare) {
+            log("⚠️ Cloudflare blokerer stadig");
+            statusEl.innerHTML =
+              '<span class="error">Cloudflare Challenge - prøv igen</span>';
+          } else if (checks.torrent || checks.seeders) {
+            log("✓ P2P data hentet!");
+            statusEl.innerHTML =
+              '<span class="success">✓ Data hentet succesfuldt!</span>';
+            log("Se udvikler-værktøjer (F12 → Console) for fuld HTML");
+          } else {
+            log("? Ukendt respons-format");
+            statusEl.innerHTML =
+              '<span class="error">Uventet respons</span>';
+          }
+
+          log(`Første 200 chars: ${html.substring(0, 200)}`);
+        } catch (error) {
+          log(`FEJL: ${error.message}`);
+          statusEl.innerHTML =
+            `<span class="error">FEJL: ${error.message}</span>`;
+        }
+      };
+
+      loadPage();
+    </script>
+  </body>
+</html>

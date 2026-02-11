@@ -2,36 +2,85 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = process.env.PORT || 8000;
 
-const feedUrl =
-  process.env.FEED_URL ||
-  "https://superbits.org/rss.php?cat=4,26&p2p=1&passkey=2c7ec1061cb16c5f5ba5c42d8e7ab5b9";
+// Læs cookies fra fil
+const cookieFile = path.join(__dirname, "cookies.json");
+let cookies = [];
+try {
+  const data = fs.readFileSync(cookieFile, "utf-8");
+  cookies = JSON.parse(data);
+  console.log(`Loaded ${cookies.length} cookie(s)`);
+} catch (err) {
+  console.warn("Kunne ikke læse cookies.json:", err.message);
+}
+
+// Konverter cookies til Puppeteer format
+const getPuppeteerCookies = () => {
+  return cookies.map((c) => ({
+    name: c.name,
+    value: c.value,
+    domain: c.domain || ".superbits.org",
+    path: c.path || "/",
+  }));
+};
 
 app.use(express.static("."));
 
-app.get("/rss", async (req, res) => {
+app.get("/p2p", async (req, res) => {
+  let browser;
   try {
-    console.log(`[RSS] Fetching: ${feedUrl}`);
+    const url = "https://superbits.org/p2p?sort=up&fc=true&p2p=false";
 
-    const response = await fetch(feedUrl, { cache: "no-store" });
-    if (!response.ok) {
-      console.log(`[RSS] Error: HTTP ${response.status}`);
-      res.status(response.status).send(await response.text());
-      return;
+    console.log(`[P2P] Starting Puppeteer...`);
+    // headless: false virker bedre lokalt på Windows
+    browser = await puppeteer.launch({
+      headless: false,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
+    const page = await browser.newPage();
+    console.log(`[P2P] Page created`);
+
+    // Sæt cookies
+    const puppeteerCookies = getPuppeteerCookies();
+    if (puppeteerCookies.length > 0) {
+      await page.setCookie(...puppeteerCookies);
+      console.log(`[P2P] Cookies set: ${puppeteerCookies.length}`);
     }
 
-    const body = await response.text();
-    console.log(`[RSS] Got ${body.length} bytes`);
-    res.setHeader("Content-Type", "application/xml; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(body);
+    // Sæt realistic headers
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    console.log(`[P2P] Navigating to: ${url}`);
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
+    console.log(`[P2P] Page loaded, waiting for Angular to render...`);
+
+    // Vent på at Angular renderer indholdet
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    const html = await page.content();
+    console.log(`[P2P] Content size: ${html.length} bytes`);
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+
+    await browser.close();
   } catch (error) {
-    console.error(`[RSS] Error:`, error.message);
-    res.status(500).send("Kunne ikke hente RSS.");
+    console.error(`[P2P] Error:`, error.message);
+    res.status(500).send(`Fejl: ${error.message}`);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 });
 
